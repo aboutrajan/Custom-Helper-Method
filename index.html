@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Own Helper</title>
+</head>
+<body>
+<h1>HI There!</h1>
+<div id="time"></div>
+
+<script
+        src="https://code.jquery.com/jquery-3.3.1.min.js"
+        integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+        crossorigin="anonymous"></script>
+<script>
+    var rajan = rajan || {};
+    rajan.isResponseError = function (response) {
+        return ('responseJSON' in response) && (response.responseJSON['status'] === 'error');
+    }
+    rajan.buildResponseError = function (response) {
+        if (!rajan.isResponseError(response)) {
+            return '';
+        }
+        if (!('error_list' in response.responseJSON)) {
+            return '';
+        }
+        var error_list = response.responseJSON['error_list']
+        var error_text = '';
+        if (typeof error_list === 'object') {
+            for (var i = 0; i < error_list.length; i++) {
+                var temp_msg = error_list[i];
+                error_text = error_text != '' ? error_text + ', ' + temp_msg : temp_msg;
+            }
+        }
+        var prefix = 'An error occurred';
+        if ('error_row_num' in response.responseJSON) {
+            prefix += ' in row number ' + response.responseJSON['error_row_num'];
+        }
+        return prefix + ': ' + error_text;
+    }
+    rajan.ajax = function (ajaxSettings) {
+        var successCallback = function() {};
+        if ('success' in ajaxSettings) {
+            successCallback = ajaxSettings['success'];
+            delete ajaxSettings['success'];
+        }
+
+        var errorCallback = function() {};
+        if ('error' in ajaxSettings) {
+            errorCallback = ajaxSettings['error'];
+            delete ajaxSettings['error'];
+        }
+
+        ajaxSettings = $.extend({}, {
+            'contentType': 'application/json',
+            'expectedResponseContentType': 'application/json',
+            'success': function (data, textStatus, xhr) {
+                var expectedContentType = ajaxSettings['expectedResponseContentType'];
+                var ctype = xhr.getResponseHeader('Content-Type');
+                if (ctype && ctype.toLowerCase().indexOf(expectedContentType) == -1) {
+                    return;
+                }
+                if (typeof successCallback != 'undefined') {
+                    successCallback(data);
+                }
+            },
+            'error': function(response) {
+                if (typeof errorCallback != 'undefined') {
+                    errorCallback(response);
+                } else {
+                    swal("An unexpected error occurred. Please contact the VNDLY support team.");
+                }
+            }
+        }, ajaxSettings);
+        var jwt_token = localStorage.getItem('jwt_token');
+        var csrf_token = helperMethods.getCookie('csrftoken');
+        ajaxSettings['beforeSend'] = function (xhr, settings) {
+            if (csrf_token) {
+                xhr.setRequestHeader("X-CSRFToken", csrf_token);
+            }
+            if (jwt_token) {
+                xhr.setRequestHeader("Authorization", "JWT " + jwt_token);
+            }
+        };
+        return $.ajax(ajaxSettings);
+    }
+
+
+    var helperMethods = {
+        ajaxHandler : function(url,method,data,callback){
+            var ajax_data = {
+                'url':url,
+                'type':method,
+                'data':data,
+                'success':function(response){
+                    if(typeof callback!='undefined' && response){
+                        callback(response);
+                    }
+                }
+            }
+            var csrf_token = helperMethods.getCookie('csrftoken');
+            if(csrf_token!=''){
+                ajax_data['beforeSend'] = function(xhr, settings) {
+                    xhr.setRequestHeader("X-CSRFToken", csrf_token);
+                }
+            }
+            $.ajax(ajax_data);
+        },
+        ajaxHandlerJWTImage: function (url, method, data, token, callback) {
+            var csrf_token = helperMethods.getCookie('csrftoken');
+            $.ajax({
+                'url': url,
+                'type': method,
+                'data': data,
+                'contentType': false,
+                'processData': false,
+                beforeSend: function (xhr, settings) {
+                    xhr.setRequestHeader("X-CSRFToken", csrf_token);
+                    xhr.setRequestHeader("Authorization", "JWT " + token);
+                },
+                'success': function (response) {
+                    if (typeof callback != 'undefined' && response) {
+                        callback(response);
+                    }
+                },
+                error: function (response, status, error) {
+                    if (response.status == 401) {
+                        helperMethods.secureHTTPRequestHandlerImage(url, method, data, callback,
+                            'expired');
+                    }
+                    if(vndly.isResponseError(response)) {
+                        alert(vndly.buildResponseError(response));
+                        location.reload();
+                        return;
+                    }
+                    alert("An unexpected error occurred. Please contact the VNDLY support team.");
+                    location.reload();
+                    return;
+                }
+            });
+        },
+
+
+        getCookie : function(name){
+            var cookieValue = null;
+            if (document.cookie && document.cookie != '') {
+                var cookies = document.cookie.split(';');
+                for (var i = 0; i < cookies.length; i++) {
+                    var cookie = jQuery.trim(cookies[i]);
+                    // Does this cookie string begin with the name we want?
+                    if (cookie.substring(0, name.length + 1) == (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        },
+
+        /*ajaxHandlerJWT : function(url,method,data,token,callback){
+            var csrf_token = helperMethods.getCookie('csrftoken');
+            $.ajax({
+                'url':url,
+                'type':method,
+                'data':JSON.stringify(data),
+                'contentType':'application/json',
+                beforeSend: function(xhr, settings) {
+                    xhr.setRequestHeader("X-CSRFToken", csrf_token);
+                    xhr.setRequestHeader("Authorization", "JWT "+ token);
+                },
+                'success':function(response,status,xhr){
+                    if(typeof callback!='undefined'){
+                        callback(response, status, xhr);
+                    }
+                },
+                error: function(response,status,error){
+                    $('.loader-overlay').hide();
+                    if(status==401){
+                        helperMethods.secureHTTPRequestHandler(url,method,data,callback,'expired');
+                        swal('Error','Your session is expired. Please log in again','error');
+                    }else{
+                        var statusType = status.charAt(0).toUpperCase() + status.slice(1);
+                        var json = response.responseJSON;
+                        var userMessage = json && (json.detail || json.message);
+                        swal(statusType, userMessage || error, 'error');
+                    }
+                }
+            });
+        },
+
+        secureHTTPRequestHandler : function(url,method,data,callback,type){
+            var token = localStorage.getItem('jwt_token');
+            if(token=='' || type=='expired'){
+                helperMethods.ajaxHandler(base_url+'/accounts/token/','GET',{},function(response){
+                    localStorage.setItem('token',response.token);
+                    helperMethods.ajaxHandlerJWT(url,method,data,response.token,callback);
+                });
+            }
+            else{
+                helperMethods.ajaxHandlerJWT(url,method,data,token,callback);
+            }
+        },
+
+        secureHTTPRequestHandlerImage : function(url,method,data,callback,type){
+            var token = localStorage.getItem('jwt_token');
+            if(token=='' || type=='expired'){
+                helperMethods.ajaxHandler(base_url+'/accounts/token/','GET',{},function(response){
+                    localStorage.setItem('token',response.token);
+                    helperMethods.ajaxHandlerJWTImage(url,method,data,response.token,callback);
+                });
+            }
+            else{
+                helperMethods.ajaxHandlerJWTImage(url,method,data,token,callback);
+            }
+        },
+
+        ajaxHandlerJWTFile: function (url, method, data, token, callback) {
+            var csrf_token = helperMethods.getCookie('csrftoken');
+            $.ajax({
+                'url': url,
+                'type': method,
+                'data': data,
+                'contentType': false,
+                'processData': false,
+                beforeSend: function (xhr, settings) {
+                    xhr.setRequestHeader("X-CSRFToken", csrf_token);
+                    xhr.setRequestHeader("Authorization", "JWT " + token);
+                },
+                'success': function (response) {
+                    if (typeof callback != 'undefined' && response) {
+                        callback(response);
+                    }
+
+                },
+                error: function (response, status, error) {
+                    if (response.status == 401) {
+                        helperMethods.secureHTTPRequestHandlerFile(url, method, data, callback, 'expired');
+                    }
+                    $(".social_overlay").remove();
+                    $('#save_candidate_profile').removeAttr('disabled');
+                    alert(response.statusText);
+                }
+            });
+        },
+
+        secureHTTPRequestHandlerFile: function (url, method, data, callback, type) {
+            var token = localStorage.getItem('jwt_token');
+            if (token == '' || type == 'expired') {
+                helperMethods.ajaxHandler(base_url + '/accounts/token/', 'GET', {}, function (response) {
+                    localStorage.setItem('token', response.token);
+                    helperMethods.ajaxHandlerJWTFile(url, method, data, response.token, callback);
+                });
+            }
+            else {
+                helperMethods.ajaxHandlerJWTFile(url, method, data, token, callback);
+            }
+        },
+
+        ajaxHandlerJWTResume: function (url, method, data, token, callback) {
+            var csrf_token = helperMethods.getCookie('csrftoken');
+            $.ajax({
+                'url': url,
+                'type': method,
+                'data': data,
+                'contentType': false,
+                'processData': false,
+                beforeSend: function (xhr, settings) {
+                    xhr.setRequestHeader("X-CSRFToken", csrf_token);
+                    xhr.setRequestHeader("Authorization", "JWT " + token);
+                },
+                'success': function (response) {
+                    if (typeof callback != 'undefined' && response) {
+                        callback(response);
+                    }
+
+                },
+                error: function (response, status, error) {
+                    if (response.status == 401) {
+                        helperMethods.secureHTTPRequestHandlerResume(url, method, data, callback, 'expired');
+                    }
+                    alert(response.statusText);
+                }
+            });
+        },
+        secureHTTPRequestHandlerResume: function (url, method, data, callback, type) {
+            var token = localStorage.getItem('jwt_token');
+            if (token == '' || type == 'expired') {
+                helperMethods.ajaxHandler(base_url + '/accounts/token/', 'GET', {}, function (response) {
+                    localStorage.setItem('token', response.token);
+                    helperMethods.ajaxHandlerJWTResume(url, method, data, response.token, callback);
+                });
+            }
+            else {
+                helperMethods.ajaxHandlerJWTResume(url, method, data, token, callback);
+            }
+        }*/
+    }
+    rajan.ajax({
+        url:'http://time.jsontest.com/',
+        method:'GET',
+        data:{},
+        success:function(response) {
+            $('#time').html(response.time);
+        },
+        error:function(error) {
+            console.log(error);
+        }
+    })
+</script>
+</body>
+</html>
