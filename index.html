@@ -68,7 +68,7 @@
                 if (typeof errorCallback != 'undefined') {
                     errorCallback(response);
                 } else {
-                    swal("An unexpected error occurred. Please contact the VNDLY support team.");
+                    swal("An unexpected error occurred.");
                 }
             }
         }, ajaxSettings);
@@ -128,12 +128,12 @@
                         helperMethods.secureHTTPRequestHandlerImage(url, method, data, callback,
                             'expired');
                     }
-                    if(vndly.isResponseError(response)) {
-                        alert(vndly.buildResponseError(response));
+                    if(rajan.isResponseError(response)) {
+                        alert(rajan.buildResponseError(response));
                         location.reload();
                         return;
                     }
-                    alert("An unexpected error occurred. Please contact the VNDLY support team.");
+                    alert("An unexpected error occurred.");
                     location.reload();
                     return;
                 }
@@ -294,11 +294,54 @@
                 helperMethods.ajaxHandlerJWTResume(url, method, data, token, callback);
             }
         }*/
+        
+        // To upload a file 
+        var upload = {
+    bulkUploadData: function (file, uploadUrl) {
+        var file_name = file.name;
+        var ext = file_name.substr(file_name.lastIndexOf('.') + 1).toLowerCase();
+        var fileData = new FormData();
+        fileData.append("file", file);
+        fileData.append("file_name", file_name);
+        fileData.append("file_type", ext);
+        rajan.ajax({
+            'url':uploadUrl,
+            'method':'POST',
+            'data':fileData,
+            'contentType': false,
+            'processData': false,
+            'success':function() {
+                swal({
+                    text: "File is uploaded successfully.",
+                    type: "success",
+                    allowOutsideClick: false
+                }).then(function(){
+                    $('#bulk_upload_popup').modal('hide');
+                    window.location.reload();
+
+                });
+            },
+            'error':function(error) {
+                var errorMessage = error.responseJSON ? error.responseJSON.error_list.join('<br>') : 'Upload error. Please contact VNDLY support.';
+                swal({
+                    title:'Error',
+                    html: errorMessage,
+                    type: "error",
+                    allowOutsideClick: false
+                }).then(function(){
+                    $('#bulk_upload_popup').modal('hide');
+                    window.location.reload();
+                });
+            }
+        });
+    }
+};
+        
     }
     rajan.ajax({
         url:'http://time.jsontest.com/',
         method:'GET',
-        data:{},
+        data:{}, // For POST/PUT use JSON.stringify(data)
         success:function(response) {
             $('#time').html(response.time);
         },
